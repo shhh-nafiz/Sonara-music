@@ -69,7 +69,7 @@ fun EqualizerScreen(onBack: () -> Unit) {
             Text("Equalizer", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             TextButton(onClick = { DspState.reset() }) { Text("Reset", color = accent) }
             Switch(
-                checked = on, onCheckedChange = { DspState.setEnabled(it) },
+                checked = on, onCheckedChange = { DspState.setOn(it) },
                 colors = SwitchDefaults.colors(checkedTrackColor = accent, checkedThumbColor = Color.White),
             )
             Spacer(Modifier.width(12.dp))

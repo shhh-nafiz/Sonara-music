@@ -74,7 +74,7 @@ object DspState {
         Store.putString("eq_preset", _presetName.value)
     }
 
-    fun setEnabled(on: Boolean) { enabled = on; save(); changed() }
+    fun setOn(on: Boolean) { enabled = on; save(); changed() }
 
     fun applyPreset(p: EqPreset) {
         gains = p.gains.toFloatArray()
