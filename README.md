@@ -2,7 +2,10 @@
 
 Kotlin + Jetpack Compose + Media3 (ExoPlayer). Plays the music stored on your phone.
 
-## Build
+## Build on GitHub (no Android Studio needed)
+Push this folder to a GitHub repo, open the Actions tab > "Build APK" > Run workflow. When it finishes, download `Sonara-debug-apk` from the run page, unzip it and install `app-debug.apk` on your phone.
+
+## Build locally
 1. Install Android Studio (Koala or newer). File > Open > select this folder.
 2. Let Gradle sync (needs internet once; it downloads Gradle 8.7 and the libraries).
 3. Plug in your phone (USB debugging on) and press Run, or Build > Build APK(s).
