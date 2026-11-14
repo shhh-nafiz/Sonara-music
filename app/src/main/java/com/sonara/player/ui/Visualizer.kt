@@ -34,10 +34,29 @@ class VizAnalyzer(private val bands: Int = 48) {
     private val im = FloatArray(n)
     private val window = FloatArray(n) { (0.5 - 0.5 * cos(2 * PI * it / (n - 1))).toFloat() }
     val levels = FloatArray(bands)
+    private val k0 = IntArray(bands)
+    private val k1 = IntArray(bands)
+    private var edgesForRate = 0
+    private var lastNanos = 0L
 
     fun maxLevel() = levels.maxOrNull() ?: 0f
 
-    fun update(playing: Boolean) {
+    private fun buildEdges(sr: Int) {
+        edgesForRate = sr
+        val fMin = 40.0
+        val fMax = min(16000.0, sr / 2.0 * 0.95)
+        for (b in 0 until bands) {
+            val f0 = fMin * Math.pow(fMax / fMin, b.toDouble() / bands)
+            val f1 = fMin * Math.pow(fMax / fMin, (b + 1).toDouble() / bands)
+            k0[b] = max(1, (f0 * n / sr).toInt())
+            k1[b] = min(n / 2, max(k0[b] + 1, (f1 * n / sr).toInt() + 1))
+        }
+    }
+
+    /** Called every display frame; the heavy FFT runs at most ~60 times a second even on 144 Hz screens. */
+    fun update(playing: Boolean, nowNanos: Long) {
+        if (nowNanos - lastNanos < 15_000_000L) return
+        lastNanos = nowNanos
         if (!playing) {
             for (i in levels.indices) levels[i] *= 0.9f
             return
@@ -50,16 +69,11 @@ class VizAnalyzer(private val bands: Int = 48) {
             im[i] = 0f
         }
         fft()
-        val sr = DspState.sampleRate.toFloat()
-        val fMin = 40f
-        val fMax = min(16000f, sr / 2f * 0.95f)
+        val sr = DspState.sampleRate
+        if (sr != edgesForRate) buildEdges(sr)
         for (b in 0 until bands) {
-            val f0 = fMin * Math.pow((fMax / fMin).toDouble(), b.toDouble() / bands).toFloat()
-            val f1 = fMin * Math.pow((fMax / fMin).toDouble(), (b + 1).toDouble() / bands).toFloat()
-            val k0 = max(1, (f0 * n / sr).toInt())
-            val k1 = max(k0 + 1, (f1 * n / sr).toInt() + 1)
             var m = 0f
-            for (k in k0 until min(k1, n / 2)) {
+            for (k in k0[b] until k1[b]) {
                 val mag = sqrt(re[k] * re[k] + im[k] * im[k])
                 if (mag > m) m = mag
             }
@@ -110,8 +124,8 @@ fun AudioVisualizer(playing: Boolean, style: Int, color: Color, modifier: Modifi
     var frame by remember { mutableIntStateOf(0) }
     LaunchedEffect(playing) {
         while (playing || analyzer.maxLevel() > 0.01f) {
-            androidx.compose.runtime.withFrameNanos { }
-            analyzer.update(playing)
+            val t = androidx.compose.runtime.withFrameNanos { it }
+            analyzer.update(playing, t)
             frame++
         }
         frame++

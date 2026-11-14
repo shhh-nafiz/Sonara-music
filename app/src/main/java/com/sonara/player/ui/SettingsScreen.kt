@@ -65,6 +65,9 @@ fun SettingsScreen(vm: MainViewModel, onManage: () -> Unit, onBack: () -> Unit) 
     val speed by Store.speed.collectAsState()
     val skipSilence by Store.skipSilence.collectAsState()
     val replayGain by Store.replayGain.collectAsState()
+    val lyricsAuto by Store.lyricsAuto.collectAsState()
+    val lyricsWifi by Store.lyricsWifiOnly.collectAsState()
+    val lyricsProgress by vm.lyricsProgress.collectAsState()
     val dynAccent by Store.dynamicAccent.collectAsState()
     val viz by Store.vizStyle.collectAsState()
     val songs by vm.songs.collectAsState()
@@ -165,6 +168,37 @@ fun SettingsScreen(vm: MainViewModel, onManage: () -> Unit, onBack: () -> Unit) 
                 Text("Jumps over silent gaps inside tracks", fontSize = 12.sp, color = TextSecondary)
             }
             Switch(skipSilence, { Store.setSkipSilence(it) }, colors = SwitchDefaults.colors(checkedTrackColor = acc, checkedThumbColor = Color.White))
+        }
+
+        Header("Lyrics")
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Download lyrics automatically", fontWeight = FontWeight.Medium)
+                Text("Finds time-synced lyrics (LRCLIB) for songs you play, whenever you're online. Saved on your phone.", fontSize = 12.sp, color = TextSecondary)
+            }
+            Switch(lyricsAuto, { Store.setLyricsAuto(it) }, colors = SwitchDefaults.colors(checkedTrackColor = acc, checkedThumbColor = Color.White))
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Wi-Fi only", fontWeight = FontWeight.Medium)
+                Text("Don't use mobile data for lyrics", fontSize = 12.sp, color = TextSecondary)
+            }
+            Switch(lyricsWifi, { Store.setLyricsWifiOnly(it) }, colors = SwitchDefaults.colors(checkedTrackColor = acc, checkedThumbColor = Color.White))
+        }
+        val lp = lyricsProgress
+        if (lp == null) {
+            Button(onClick = { vm.downloadAllLyrics() }, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                Text("Download lyrics for my whole library")
+            }
+        } else {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                Text("Downloading lyrics… ${lp.first} / ${lp.second}", fontSize = 13.sp, color = TextSecondary)
+                androidx.compose.material3.LinearProgressIndicator(
+                    progress = { if (lp.second > 0) lp.first.toFloat() / lp.second else 0f },
+                    color = acc, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                )
+                androidx.compose.material3.TextButton(onClick = { vm.cancelLyricsDownload() }) { Text("Stop") }
+            }
         }
 
         Header("Visualizer style")

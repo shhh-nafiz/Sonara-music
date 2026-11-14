@@ -155,6 +155,10 @@ private fun SourcesTab(vm: MainViewModel) {
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp)) {
         item {
+            androidx.compose.material3.OutlinedButton(
+                onClick = { Store.resetSourceFilters() },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            ) { Text("Show all my music again (reset folder, storage & length filters)") }
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Music files only", fontWeight = FontWeight.Medium)

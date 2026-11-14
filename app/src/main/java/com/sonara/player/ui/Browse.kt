@@ -193,7 +193,7 @@ fun SearchScreen(vm: MainViewModel) {
         )
         LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp)) {
             items(res, key = { it.id }) { s ->
-                SongRow(s, s.id == ui.currentId, vm.player, playlists, { vm.player.play(res, s.id) }, modifier = Modifier.animateItem())
+                SongRow(s, s.id == ui.currentId, vm.player, playlists, { vm.player.play(res, s.id) })
             }
             if (q.isNotBlank() && res.isEmpty()) item { EmptyHint("No results for \"$q\"") }
         }
@@ -278,7 +278,7 @@ fun LibraryScreen(vm: MainViewModel, onOpen: (Detail) -> Unit, onSettings: () ->
                 }
                 item { PlayHeader(sorted, vm, "${songs.size} songs") }
                 items(sorted, key = { it.id }) { s ->
-                    SongRow(s, s.id == ui.currentId, vm.player, playlists, { vm.player.play(sorted, s.id) }, modifier = Modifier.animateItem())
+                    SongRow(s, s.id == ui.currentId, vm.player, playlists, { vm.player.play(sorted, s.id) })
                 }
                 if (songs.isEmpty()) item {
                     if (loading) Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
@@ -318,7 +318,7 @@ fun LibraryScreen(vm: MainViewModel, onOpen: (Detail) -> Unit, onSettings: () ->
                     item { PlayHeader(favs, vm, "${favs.size} liked songs") }
                     if (favs.isEmpty()) item { EmptyHint("Tap the heart on any song to add it here.") }
                     items(favs, key = { it.id }) { s ->
-                        SongRow(s, s.id == ui.currentId, vm.player, playlists, { vm.player.play(favs, s.id) }, modifier = Modifier.animateItem())
+                        SongRow(s, s.id == ui.currentId, vm.player, playlists, { vm.player.play(favs, s.id) })
                     }
                 }
             }
@@ -389,7 +389,6 @@ fun DetailScreen(vm: MainViewModel, d: Detail, onBack: () -> Unit) {
             items(list, key = { it.id }) { s ->
                 SongRow(
                     s, s.id == ui.currentId, vm.player, playlists, { vm.player.play(list, s.id) },
-                    modifier = Modifier.animateItem(),
                     extraMenu = { dismiss ->
                         if (d.kind == "playlist") androidx.compose.material3.DropdownMenuItem(
                             text = { Text("Remove from this playlist") },

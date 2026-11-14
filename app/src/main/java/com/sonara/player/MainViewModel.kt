@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.sonara.player.data.MediaRepo
+import com.sonara.player.data.lyricQuery
 import com.sonara.player.data.Song
 import com.sonara.player.data.Store
 import com.sonara.player.playback.PlayerController
@@ -32,6 +33,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val loading: StateFlow<Boolean> = _loading
     private var loaded = false
     private var restored = false
+
+    private val _lyricsProgress = MutableStateFlow<Pair<Int, Int>?>(null)
+    /** (done, total) while "download all lyrics" runs, else null. */
+    val lyricsProgress: StateFlow<Pair<Int, Int>?> = _lyricsProgress
+    private var lyricsJob: kotlinx.coroutines.Job? = null
+
+    fun downloadAllLyrics() {
+        if (lyricsJob?.isActive == true) return
+        lyricsJob = viewModelScope.launch {
+            val list = songs.value
+            var done = 0
+            _lyricsProgress.value = 0 to list.size
+            for (s in list) {
+                if (!com.sonara.player.data.LyricsRepo.hasCached(s.id)) {
+                    val r = com.sonara.player.data.LyricsRepo.load(getApplication(), s.lyricQuery())
+                    if (r is com.sonara.player.data.LyricsResult.Offline) break // no connection: stop, resume later
+                    kotlinx.coroutines.delay(250) // be gentle with the free service
+                }
+                done++
+                _lyricsProgress.value = done to list.size
+            }
+            _lyricsProgress.value = null
+        }
+    }
+
+    fun cancelLyricsDownload() { lyricsJob?.cancel(); _lyricsProgress.value = null }
 
     /** The visible library: raw minus blacklisted songs, excluded folders, disabled storages, short clips. */
     val songs: StateFlow<List<Song>> = combine(

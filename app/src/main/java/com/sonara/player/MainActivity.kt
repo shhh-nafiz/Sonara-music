@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         Store.init(this)
         com.sonara.player.data.ArtworkLoader.init(this)
+        com.sonara.player.data.LyricsRepo.init(this)
         DspState.load()
         requestHighRefreshRate()
         setContent {

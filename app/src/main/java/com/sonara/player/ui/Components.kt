@@ -77,12 +77,16 @@ fun Cover(song: Song?, modifier: Modifier = Modifier, px: Int = 256, corner: Dp 
     }
     val shape = RoundedCornerShape(corner)
     Box(modifier.clip(shape).background(Color(0xFF282828)), contentAlignment = Alignment.Center) {
-        androidx.compose.animation.Crossfade(bmp, animationSpec = androidx.compose.animation.core.tween(200), label = "cover") { b ->
-            if (b != null) {
-                Image(b.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            } else {
-                Icon(Icons.Default.MusicNote, null, tint = Color(0xFF7F7F7F), modifier = Modifier.fillMaxSize(0.45f))
+        if (px >= 512) {
+            androidx.compose.animation.Crossfade(bmp, animationSpec = androidx.compose.animation.core.tween(200), label = "cover") { b ->
+                if (b != null) Image(b.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                else Icon(Icons.Default.MusicNote, null, tint = Color(0xFF7F7F7F), modifier = Modifier.fillMaxSize(0.45f))
             }
+        } else {
+            // list thumbnails: no animation layer per row (keeps scrolling smooth)
+            val b = bmp
+            if (b != null) Image(b.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            else Icon(Icons.Default.MusicNote, null, tint = Color(0xFF7F7F7F), modifier = Modifier.fillMaxSize(0.45f))
         }
     }
 }
@@ -138,6 +142,8 @@ fun SongMenu(
     val isFav = song.id in Store.favorites.collectAsState().value
     val isIgnored = song.id in Store.ignored.collectAsState().value
     val vm = LocalMainVm.current
+    var confirmFolder by remember { mutableStateOf(false) }
+    var confirmBlacklist by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }) {
             Icon(Icons.Default.MoreVert, "More", tint = TextSecondary)
@@ -156,21 +162,46 @@ fun SongMenu(
                 leadingIcon = { Icon(Icons.Default.VisibilityOff, null) },
                 onClick = { Store.toggleIgnored(song.id); open = false },
             )
+            androidx.compose.material3.HorizontalDivider()
             if (song.folder.isNotEmpty()) DropdownMenuItem(
-                text = { Text("Exclude this folder") },
-                onClick = {
-                    if (song.folder !in Store.excludedFolders.value) Store.toggleFolder(song.folder)
-                    open = false
-                },
+                text = { Text("Exclude this folder…") },
+                onClick = { open = false; confirmFolder = true },
             )
             DropdownMenuItem(
-                text = { Text("Blacklist song (hide everywhere)") },
-                onClick = { if (vm != null) vm.toggleBlacklist(song) else Store.toggleBlacklist(song.id); open = false },
+                text = { Text("Blacklist song…") },
+                onClick = { open = false; confirmBlacklist = true },
             )
             extra?.invoke { open = false }
         }
     }
     if (pickPlaylist) PlaylistPicker(song, playlists) { pickPlaylist = false }
+    if (confirmFolder) {
+        val n = vm?.songs?.value?.count { it.folder == song.folder } ?: 0
+        AlertDialog(
+            onDismissRequest = { confirmFolder = false },
+            title = { Text("Exclude this folder?") },
+            text = { Text("This hides all $n songs in\n${song.folder.substringAfterLast('/')}\n\nYou can bring them back in Settings → Manage library → Sources.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (song.folder !in Store.excludedFolders.value) Store.toggleFolder(song.folder)
+                    confirmFolder = false
+                }) { Text("Exclude") }
+            },
+            dismissButton = { TextButton(onClick = { confirmFolder = false }) { Text("Cancel") } },
+        )
+    }
+    if (confirmBlacklist) AlertDialog(
+        onDismissRequest = { confirmBlacklist = false },
+        title = { Text("Blacklist this song?") },
+        text = { Text("\"${song.title}\" will be hidden everywhere and never play. Restore it any time in Settings → Manage library → Blacklist.") },
+        confirmButton = {
+            TextButton(onClick = {
+                if (vm != null) vm.toggleBlacklist(song) else Store.toggleBlacklist(song.id)
+                confirmBlacklist = false
+            }) { Text("Blacklist") }
+        },
+        dismissButton = { TextButton(onClick = { confirmBlacklist = false }) { Text("Cancel") } },
+    )
 }
 
 @Composable

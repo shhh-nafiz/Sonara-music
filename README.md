@@ -3,7 +3,7 @@
 Kotlin + Jetpack Compose + Media3 (ExoPlayer). Plays the music stored on your phone.
 
 ## Build on GitHub (no Android Studio needed)
-Push this folder to a GitHub repo, open the Actions tab > "Build APK" > Run workflow. When it finishes, download `Sonara-debug-apk` from the run page, unzip it and install `app-debug.apk` on your phone.
+Push this folder to a GitHub repo, open the Actions tab > "Build APK" > Run workflow. When it finishes, download `Sonara-apk` from the run page, unzip it and install `app-release.apk` on your phone.
 
 ## Build locally
 1. Install Android Studio (Koala or newer). File > Open > select this folder.
@@ -39,3 +39,6 @@ Push this folder to a GitHub repo, open the Actions tab > "Build APK" > Run work
 - Loudness normalization (ReplayGain tags), skips unplayable files automatically
 - Drag-to-reorder queue, A-Z fast scroller, accent color that follows the album cover
 - Resumes your queue and position after the app is closed
+
+## Lyrics
+Time-synced lyrics from LRCLIB (free, open database). Matched by title, artist, album and song length, downloaded automatically when you're online and cached on the phone. Tap the lyrics button in the player; tap a line to jump to it.

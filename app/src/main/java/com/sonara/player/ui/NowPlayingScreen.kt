@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
@@ -117,6 +118,7 @@ fun NowPlayingScreen(
 
     var showQueue by remember { mutableStateOf(false) }
     var showSleep by remember { mutableStateOf(false) }
+    var showLyrics by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
 
     Box(
         Modifier.fillMaxSize()
@@ -144,6 +146,9 @@ fun NowPlayingScreen(
             Spacer(Modifier.height(12.dp))
             // cover (swipe to skip)
             var dx by remember { mutableStateOf(0f) }
+            androidx.compose.animation.Crossfade(showLyrics, animationSpec = androidx.compose.animation.core.tween(250), label = "lyricsToggle") { lyrics ->
+                if (lyrics) LyricsPanel(vm, song, Modifier.fillMaxWidth().aspectRatio(1f))
+                else
             Cover(
                 song,
                 Modifier.fillMaxWidth().aspectRatio(1f)
@@ -158,6 +163,7 @@ fun NowPlayingScreen(
                     },
                 px = 1024, corner = 8.dp,
             )
+            }
 
             Spacer(Modifier.height(24.dp))
             // title + favorite heart (like Spotify)
@@ -235,6 +241,9 @@ fun NowPlayingScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onOpenEq) { Icon(Icons.Default.Equalizer, "Equalizer") }
+                IconButton(onClick = { showLyrics = !showLyrics }) {
+                    Icon(Icons.Default.Subtitles, "Lyrics", tint = if (showLyrics) accent else MaterialTheme.colorScheme.onBackground)
+                }
                 Spacer(Modifier.weight(1f))
                 Text(
                     song.qualityLabel, fontSize = 12.sp, fontWeight = FontWeight.Bold,

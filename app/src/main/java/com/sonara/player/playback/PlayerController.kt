@@ -114,6 +114,7 @@ class PlayerController(private val app: Context) {
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle(s.title).setArtist(s.artist).setAlbumTitle(s.album)
+                .setDurationMs(s.durationMs)
                 .setArtworkUri(s.uri) // our BitmapLoader pulls the embedded cover from the audio file
                 .setIsPlayable(true).setIsBrowsable(false)
                 .build()

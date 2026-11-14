@@ -63,6 +63,7 @@ class PlaybackService : MediaSessionService() {
         instance = this
         Store.init(this)
         com.sonara.player.data.ArtworkLoader.init(this)
+        com.sonara.player.data.LyricsRepo.init(this)
         DspState.load()
         DspState.rgOn = Store.replayGain.value
 
@@ -114,6 +115,7 @@ class PlaybackService : MediaSessionService() {
                 mediaItem?.mediaId?.toLongOrNull()?.let { Store.addRecent(it) }
                 recycleShuffleCycleIfNeeded()
                 refreshExtras()
+                prefetchLyrics()
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -147,6 +149,7 @@ class PlaybackService : MediaSessionService() {
         scope.launch { Store.speed.drop(1).collect { player.setPlaybackSpeed(it) } }
         scope.launch { Store.skipSilence.drop(1).collect { player.skipSilenceEnabled = it } }
         scope.launch { fadeLoop() }
+        registerNetworkWatcher()
         DspState.rgOn = Store.replayGain.value
         scope.launch { Store.replayGain.drop(1).collect { DspState.setReplayGainEnabled(it) } }
         // remember where we were so the app can resume after a restart
@@ -197,6 +200,37 @@ class PlaybackService : MediaSessionService() {
     }
 
     private var consecutiveErrors = 0
+
+    /** Download lyrics for the playing song and the next two in the queue (once, then cached). */
+    private fun prefetchLyrics() {
+        if (!Store.lyricsAuto.value) return
+        val idx = player.currentMediaItemIndex
+        val queries = (idx until minOf(idx + 3, player.mediaItemCount)).mapNotNull { i ->
+            val m = player.getMediaItemAt(i)
+            val id = m.mediaId.toLongOrNull() ?: return@mapNotNull null
+            val md = m.mediaMetadata
+            val dur = ((md.durationMs ?: 0L) / 1000L).toInt()
+            if (md.title == null || dur <= 0) null
+            else com.sonara.player.data.LyricQuery(id, md.title.toString(), md.artist?.toString() ?: "", md.albumTitle?.toString() ?: "", dur)
+        }
+        if (queries.isEmpty()) return
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            for (q in queries) com.sonara.player.data.LyricsRepo.load(this@PlaybackService, q)
+        }
+    }
+
+    private var netCallback: android.net.ConnectivityManager.NetworkCallback? = null
+
+    /** When the phone (re)connects to the internet, fetch lyrics that were missing. */
+    private fun registerNetworkWatcher() {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return
+        val cb = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                scope.launch { prefetchLyrics() }
+            }
+        }
+        runCatching { cm.registerDefaultNetworkCallback(cb); netCallback = cb }
+    }
     private val gainRegex = Regex("""REPLAYGAIN_(TRACK|ALBUM)_GAIN\D*?(-?\d+(?:[.,]\d+)?)""", RegexOption.IGNORE_CASE)
     private var haveTrackGain = false
 
@@ -277,6 +311,9 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         instance = null
         SleepTimer.onFire = null
+        netCallback?.let { cb ->
+            runCatching { (getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager).unregisterNetworkCallback(cb) }
+        }
         scope.cancel()
         session?.run { player.release(); release() }
         session = null

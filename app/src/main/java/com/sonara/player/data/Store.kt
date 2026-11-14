@@ -52,6 +52,11 @@ object Store {
     private val _dynAccent = MutableStateFlow(false)
     /** Accent color follows the cover of the playing song. */
     val dynamicAccent: StateFlow<Boolean> = _dynAccent
+    private val _lyricsAuto = MutableStateFlow(true)
+    /** Download lyrics automatically for songs as they play / are queued. */
+    val lyricsAuto: StateFlow<Boolean> = _lyricsAuto
+    private val _lyricsWifi = MutableStateFlow(false)
+    val lyricsWifiOnly: StateFlow<Boolean> = _lyricsWifi
     private val _musicOnly = MutableStateFlow(true)
     val musicOnly: StateFlow<Boolean> = _musicOnly
 
@@ -81,6 +86,8 @@ object Store {
         _offVolumes.value = sp.getStringSet("offVolumes", emptySet())!!.toSet()
         _minDur.value = sp.getInt("minDur", 20)
         _musicOnly.value = sp.getBoolean("musicOnly", true)
+        _lyricsAuto.value = sp.getBoolean("lyricsAuto", true)
+        _lyricsWifi.value = sp.getBoolean("lyricsWifi", false)
         _rgOn.value = sp.getBoolean("rg", false)
         _dynAccent.value = sp.getBoolean("dynAccent", false)
         _fadeSec.value = sp.getInt("fadeSec", 0)
@@ -179,6 +186,11 @@ object Store {
         _offVolumes.value = s
         sp.edit().putStringSet("offVolumes", s).apply()
     }
+    fun resetSourceFilters() {
+        setExcludedFolders(emptySet())
+        _offVolumes.value = emptySet(); sp.edit().putStringSet("offVolumes", emptySet()).apply()
+        setMinDuration(0)
+    }
     fun setMinDuration(sec: Int) { _minDur.value = sec; sp.edit().putInt("minDur", sec).apply() }
     fun setHeartCompact(b: Boolean) { _heartCompact.value = b; sp.edit().putBoolean("heartCompact", b).apply() }
     fun setFadeSec(v: Int) { _fadeSec.value = v; sp.edit().putInt("fadeSec", v).apply() }
@@ -195,6 +207,8 @@ object Store {
     fun resumeIndex() = sp.getInt("rIndex", 0)
     fun resumePos() = sp.getLong("rPos", 0L)
 
+    fun setLyricsAuto(b: Boolean) { _lyricsAuto.value = b; sp.edit().putBoolean("lyricsAuto", b).apply() }
+    fun setLyricsWifiOnly(b: Boolean) { _lyricsWifi.value = b; sp.edit().putBoolean("lyricsWifi", b).apply() }
     fun setMusicOnly(b: Boolean) { _musicOnly.value = b; sp.edit().putBoolean("musicOnly", b).apply() }
     var foldersInitialised: Boolean
         get() = sp.getBoolean("foldersInit", false)

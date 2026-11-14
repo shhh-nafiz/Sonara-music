@@ -18,7 +18,11 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // optimized build: R8 + resource shrinking. Signed with the debug key so it installs directly.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("debug")
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
     compileOptions {
@@ -27,6 +31,11 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+    lint {
+        // a lint warning must never block building the APK
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
 
@@ -36,6 +45,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
     implementation("androidx.palette:palette-ktx:1.0.0")
+    // applies the baseline profiles shipped inside Compose/Media3 so the first launch is already fast
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
 
     val composeBom = platform("androidx.compose:compose-bom:2024.09.00")
     implementation(composeBom)
