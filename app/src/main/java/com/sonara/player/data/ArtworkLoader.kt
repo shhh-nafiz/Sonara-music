@@ -11,8 +11,11 @@ import android.net.Uri
 import android.os.Build
 import android.util.LruCache
 import android.util.Size
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+import java.util.concurrent.Executors
 
 /** Loads cover art for a song: embedded tag picture first, then MediaStore thumbnail. */
 object ArtworkLoader {
@@ -20,6 +23,18 @@ object ArtworkLoader {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
     private val misses = HashSet<String>()
+    // small dedicated pool so scrolling never starves on a flood of decode jobs
+    private val dispatcher = Executors.newFixedThreadPool(3).asCoroutineDispatcher()
+    private var diskDir: File? = null
+
+    fun init(ctx: Context) {
+        if (diskDir == null) diskDir = File(ctx.cacheDir, "covers").apply { mkdirs() }
+    }
+
+    /** Instant, non-blocking lookup so a cover that is already in memory shows on the very first frame. */
+    fun peek(uri: Uri, size: Int): Bitmap? = cache.get("$uri@$size")
+
+    private fun diskFile(uri: Uri, size: Int) = diskDir?.let { File(it, "${uri.lastPathSegment}_$size.jpg") }
 
     fun loadBlocking(ctx: Context, uri: Uri, size: Int): Bitmap? {
         val key = "$uri@$size"
@@ -27,8 +42,13 @@ object ArtworkLoader {
         if (synchronized(misses) { key in misses }) return null
 
         var bmp: Bitmap? = null
+        // 0) disk cache of previously decoded thumbnails (makes scrolling smooth after the first pass)
+        val df = if (size <= 512) diskFile(uri, size) else null
+        if (df != null && df.exists()) {
+            bmp = runCatching { BitmapFactory.decodeFile(df.path) }.getOrNull()
+        }
         // 1) embedded cover (full quality, any format)
-        runCatching {
+        if (bmp == null) runCatching {
             val r = MediaMetadataRetriever()
             try {
                 r.setDataSource(ctx, uri)
@@ -43,12 +63,15 @@ object ArtworkLoader {
             runCatching { bmp = ctx.contentResolver.loadThumbnail(uri, Size(size, size), null) }
         }
         val out = bmp
+        if (out != null && df != null && !df.exists()) {
+            runCatching { FileOutputStream(df).use { out.compress(Bitmap.CompressFormat.JPEG, 88, it) } }
+        }
         if (out != null) cache.put(key, out) else synchronized(misses) { misses += key }
         return out
     }
 
     suspend fun load(ctx: Context, uri: Uri, size: Int): Bitmap? =
-        withContext(Dispatchers.IO) { loadBlocking(ctx, uri, size) }
+        withContext(dispatcher) { loadBlocking(ctx, uri, size) }
 
     private fun decodeSampled(bytes: ByteArray, target: Int): Bitmap? {
         val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }

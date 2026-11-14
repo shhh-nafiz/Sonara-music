@@ -57,6 +57,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -108,7 +109,6 @@ fun NowPlayingScreen(
 
     var showQueue by remember { mutableStateOf(false) }
     var showSleep by remember { mutableStateOf(false) }
-    var drag by remember { mutableStateOf<Float?>(null) }
 
     Box(
         Modifier.fillMaxSize()
@@ -159,33 +159,11 @@ fun NowPlayingScreen(
                     Text(song.artist, fontSize = 16.sp, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 IconButton(onClick = { Store.toggleFavorite(song.id) }) {
-                    Icon(
-                        if (isFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favorite",
-                        tint = if (isFav) accent else MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.size(30.dp),
-                    )
+                    HeartIcon(isFav, accent, 30.dp)
                 }
             }
 
-            // seek bar
-            val dur = (ui.durationMs.takeIf { it > 0 } ?: song.durationMs).toFloat().coerceAtLeast(1f)
-            val pos = drag ?: ui.positionMs.toFloat()
-            Slider(
-                value = pos.coerceIn(0f, dur),
-                onValueChange = { drag = it },
-                onValueChangeFinished = { drag?.let { vm.player.seekTo(it.toLong()) }; drag = null },
-                valueRange = 0f..dur,
-                colors = SliderDefaults.colors(
-                    thumbColor = MaterialTheme.colorScheme.onBackground,
-                    activeTrackColor = MaterialTheme.colorScheme.onBackground,
-                    inactiveTrackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.25f),
-                ),
-            )
-            Row(Modifier.fillMaxWidth()) {
-                Text(formatTime(pos.toLong()), fontSize = 12.sp, color = TextSecondary)
-                Spacer(Modifier.weight(1f))
-                Text(formatTime(dur.toLong()), fontSize = 12.sp, color = TextSecondary)
-            }
+            SeekBar(vm, song.durationMs)
 
             // transport
             Row(
@@ -203,10 +181,12 @@ fun NowPlayingScreen(
                         .clickable { vm.player.togglePlay() },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        if (ui.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Play/Pause",
-                        tint = MaterialTheme.colorScheme.background, modifier = Modifier.size(44.dp),
-                    )
+                    androidx.compose.animation.Crossfade(ui.isPlaying, animationSpec = androidx.compose.animation.core.tween(150), label = "pp") { p ->
+                        Icon(
+                            if (p) Icons.Default.Pause else Icons.Default.PlayArrow, "Play/Pause",
+                            tint = MaterialTheme.colorScheme.background, modifier = Modifier.size(44.dp),
+                        )
+                    }
                 }
                 IconButton(onClick = { vm.player.next() }, Modifier.size(56.dp)) {
                     Icon(Icons.Default.SkipNext, "Next", Modifier.size(40.dp))
@@ -302,7 +282,6 @@ fun MiniPlayer(vm: MainViewModel, song: Song, onClick: () -> Unit) {
     val favs by Store.favorites.collectAsState()
     val accent = LocalAccent.current
     val isFav = song.id in favs
-    val frac = if (ui.durationMs > 0) ui.positionMs.toFloat() / ui.durationMs else 0f
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 8.dp).clip(RoundedCornerShape(10.dp))
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)).clickable(onClick = onClick),
@@ -313,18 +292,50 @@ fun MiniPlayer(vm: MainViewModel, song: Song, onClick: () -> Unit) {
                 Text(song.title, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(song.artist, fontSize = 12.sp, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            IconButton(onClick = { Store.toggleFavorite(song.id) }) {
-                Icon(
-                    if (isFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favorite",
-                    tint = if (isFav) accent else MaterialTheme.colorScheme.onBackground,
-                )
-            }
+            IconButton(onClick = { Store.toggleFavorite(song.id) }) { HeartIcon(isFav, accent, 24.dp) }
             IconButton(onClick = { vm.player.togglePlay() }) {
                 Icon(if (ui.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Play/Pause", Modifier.size(30.dp))
             }
         }
-        Box(Modifier.fillMaxWidth().height(2.dp).background(Color.White.copy(alpha = 0.15f))) {
-            Box(Modifier.fillMaxWidth(frac.coerceIn(0f, 1f)).height(2.dp).background(accent))
-        }
+        MiniProgress(vm, song.durationMs, accent)
     }
+}
+
+/** Seek bar that moves every frame; only this composable recomposes while the song plays. */
+@Composable
+private fun SeekBar(vm: MainViewModel, fallbackDurationMs: Long) {
+    val live by rememberLivePosition(vm.player)
+    val ui by vm.player.ui.collectAsState()
+    var drag by remember { mutableStateOf<Float?>(null) }
+    val dur = (ui.durationMs.takeIf { it > 0 } ?: fallbackDurationMs).toFloat().coerceAtLeast(1f)
+    val pos = (drag ?: live.toFloat()).coerceIn(0f, dur)
+    Slider(
+        value = pos,
+        onValueChange = { drag = it },
+        onValueChangeFinished = { drag?.let { vm.player.seekTo(it.toLong()) }; drag = null },
+        valueRange = 0f..dur,
+        colors = SliderDefaults.colors(
+            thumbColor = MaterialTheme.colorScheme.onBackground,
+            activeTrackColor = MaterialTheme.colorScheme.onBackground,
+            inactiveTrackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.25f),
+        ),
+    )
+    Row(Modifier.fillMaxWidth()) {
+        Text(formatTime(pos.toLong()), fontSize = 12.sp, color = TextSecondary)
+        Spacer(Modifier.weight(1f))
+        Text(formatTime(dur.toLong()), fontSize = 12.sp, color = TextSecondary)
+    }
+}
+
+@Composable
+private fun MiniProgress(vm: MainViewModel, durationMs: Long, accent: Color) {
+    val live by rememberLivePosition(vm.player)
+    val ui by vm.player.ui.collectAsState()
+    val dur = (ui.durationMs.takeIf { it > 0 } ?: durationMs).coerceAtLeast(1L)
+    Box(
+        Modifier.fillMaxWidth().height(2.dp).drawBehind {
+            drawRect(Color.White.copy(alpha = 0.15f))
+            drawRect(accent, size = androidx.compose.ui.geometry.Size(size.width * (live.toFloat() / dur).coerceIn(0f, 1f), size.height))
+        },
+    )
 }

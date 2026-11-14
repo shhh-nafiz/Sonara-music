@@ -22,6 +22,21 @@ object Store {
     private val _recents = MutableStateFlow<List<Long>>(emptyList())
     val recents: StateFlow<List<Long>> = _recents
 
+    // Library filters
+    private val _blacklist = MutableStateFlow<Set<Long>>(emptySet())
+    val blacklist: StateFlow<Set<Long>> = _blacklist
+    private val _ignored = MutableStateFlow<Set<Long>>(emptySet())
+    /** Songs that stay in the library but are skipped by shuffle. */
+    val ignored: StateFlow<Set<Long>> = _ignored
+    private val _excludedFolders = MutableStateFlow<Set<String>>(emptySet())
+    val excludedFolders: StateFlow<Set<String>> = _excludedFolders
+    private val _offVolumes = MutableStateFlow<Set<String>>(emptySet())
+    val offVolumes: StateFlow<Set<String>> = _offVolumes
+    private val _minDur = MutableStateFlow(20)
+    val minDurationSec: StateFlow<Int> = _minDur
+    private val _musicOnly = MutableStateFlow(true)
+    val musicOnly: StateFlow<Boolean> = _musicOnly
+
     // Theme
     private val _accent = MutableStateFlow(0xFF1ED760.toInt())
     val accent: StateFlow<Int> = _accent
@@ -42,6 +57,12 @@ object Store {
         _bg.value = sp.getInt("bg", _bg.value)
         _adaptive.value = sp.getBoolean("adaptive", true)
         _vizStyle.value = sp.getInt("viz", 0)
+        _blacklist.value = sp.getString("black", "")!!.split(',').mapNotNull { it.toLongOrNull() }.toSet()
+        _ignored.value = sp.getString("ignored", "")!!.split(',').mapNotNull { it.toLongOrNull() }.toSet()
+        _excludedFolders.value = sp.getStringSet("exFolders", emptySet())!!.toSet()
+        _offVolumes.value = sp.getStringSet("offVolumes", emptySet())!!.toSet()
+        _minDur.value = sp.getInt("minDur", 20)
+        _musicOnly.value = sp.getBoolean("musicOnly", true)
         runCatching {
             val arr = JSONArray(sp.getString("playlists", "[]"))
             _playlists.value = (0 until arr.length()).map {
@@ -103,6 +124,41 @@ object Store {
         _playlists.value = _playlists.value.filter { it.id != playlistId }
         savePlaylists()
     }
+
+    // ---- library filters ----
+    fun isIgnored(id: Long) = id in _ignored.value
+    fun toggleBlacklist(id: Long) {
+        val s = _blacklist.value.toMutableSet()
+        if (!s.add(id)) s.remove(id)
+        _blacklist.value = s
+        sp.edit().putString("black", s.joinToString(",")).apply()
+    }
+    fun toggleIgnored(id: Long) {
+        val s = _ignored.value.toMutableSet()
+        if (!s.add(id)) s.remove(id)
+        _ignored.value = s
+        sp.edit().putString("ignored", s.joinToString(",")).apply()
+    }
+    fun setExcludedFolders(s: Set<String>) {
+        _excludedFolders.value = s
+        sp.edit().putStringSet("exFolders", s).apply()
+    }
+    fun toggleFolder(folder: String) {
+        val s = _excludedFolders.value.toMutableSet()
+        if (!s.add(folder)) s.remove(folder)
+        setExcludedFolders(s)
+    }
+    fun toggleVolume(v: String) {
+        val s = _offVolumes.value.toMutableSet()
+        if (!s.add(v)) s.remove(v)
+        _offVolumes.value = s
+        sp.edit().putStringSet("offVolumes", s).apply()
+    }
+    fun setMinDuration(sec: Int) { _minDur.value = sec; sp.edit().putInt("minDur", sec).apply() }
+    fun setMusicOnly(b: Boolean) { _musicOnly.value = b; sp.edit().putBoolean("musicOnly", b).apply() }
+    var foldersInitialised: Boolean
+        get() = sp.getBoolean("foldersInit", false)
+        set(v) = sp.edit().putBoolean("foldersInit", v).apply()
 
     // ---- theme ----
     fun setAccent(c: Int) { _accent.value = c; sp.edit().putInt("accent", c).apply() }

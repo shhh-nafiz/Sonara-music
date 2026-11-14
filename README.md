@@ -22,3 +22,9 @@ Push this folder to a GitHub repo, open the Actions tab > "Build APK" > Run work
 - Highest quality: float (32-bit) output pipeline, FLAC/WAV/ALAC/MP3/AAC/OGG/Opus, bit-perfect when EQ is off (16-bit)
 - Custom accent + background colors (swatches + RGB sliders), adaptive cover-tinted player background
 - Home-screen widget: add via long-press home screen > Widgets > Sonara
+
+## Library control
+- Settings > Manage library: pick storage (internal / SD card), tick/untick folders, music-only filter, minimum clip length
+- Blacklist: hides a song everywhere and never plays it (song menu > Blacklist, or Manage > Blacklist)
+- Ignore in shuffle: song stays in the library but shuffle skips it until you un-ignore it (song menu, or Manage > Ignored, search to find it)
+- WhatsApp / Telegram / recorder / ringtone folders are excluded automatically on first run

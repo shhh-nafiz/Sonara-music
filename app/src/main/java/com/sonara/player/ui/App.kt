@@ -58,16 +58,19 @@ fun SonaraApp(vm: MainViewModel, granted: Boolean, requestPermission: () -> Unit
     var showPlayer by rememberSaveable { mutableStateOf(false) }
     var showEq by rememberSaveable { mutableStateOf(false) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showManage by rememberSaveable { mutableStateOf(false) }
 
     val ui by vm.player.ui.collectAsState()
     val byId by vm.byId.collectAsState()
     val current = ui.currentId?.let { byId[it] }
 
     BackHandler(enabled = showEq) { showEq = false }
-    BackHandler(enabled = showSettings && !showEq) { showSettings = false }
+    BackHandler(enabled = showManage && !showEq) { showManage = false }
+    BackHandler(enabled = showSettings && !showEq && !showManage) { showSettings = false }
     BackHandler(enabled = showPlayer && !showEq) { showPlayer = false }
     BackHandler(enabled = stack.isNotEmpty() && !showPlayer && !showEq && !showSettings) { stack.removeAt(stack.lastIndex) }
 
+    androidx.compose.runtime.CompositionLocalProvider(LocalMainVm provides vm) {
     Box(Modifier.fillMaxSize().background(bg)) {
         Scaffold(
             containerColor = bg,
@@ -114,10 +117,14 @@ fun SonaraApp(vm: MainViewModel, granted: Boolean, requestPermission: () -> Unit
             if (current != null) NowPlayingScreen(vm, current, onClose = { showPlayer = false }, onOpenEq = { showEq = true })
         }
         AnimatedVisibility(showSettings, enter = slideInVertically { it }, exit = slideOutVertically { it }) {
-            SettingsScreen(vm) { showSettings = false }
+            SettingsScreen(vm, onManage = { showManage = true }) { showSettings = false }
+        }
+        AnimatedVisibility(showManage, enter = slideInVertically { it }, exit = slideOutVertically { it }) {
+            ManageScreen(vm) { showManage = false }
         }
         AnimatedVisibility(showEq, enter = slideInVertically { it }, exit = slideOutVertically { it }) {
             EqualizerScreen { showEq = false }
         }
+    }
     }
 }

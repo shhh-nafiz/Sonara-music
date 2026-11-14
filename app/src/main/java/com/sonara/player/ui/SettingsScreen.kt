@@ -56,7 +56,7 @@ private val BACKGROUNDS = listOf(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
+fun SettingsScreen(vm: MainViewModel, onManage: () -> Unit, onBack: () -> Unit) {
     val accent by Store.accent.collectAsState()
     val bg by Store.bg.collectAsState()
     val adaptive by Store.adaptive.collectAsState()
@@ -71,6 +71,10 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp)) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
             Text("Appearance & settings", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        }
+
+        Button(onClick = onManage, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Text("Manage library: sources, blacklist, ignored songs")
         }
 
         Header("Accent color")

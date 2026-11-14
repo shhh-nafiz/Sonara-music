@@ -9,7 +9,7 @@ import kotlinx.coroutines.withContext
 /** Reads every audio file the phone's MediaStore knows about (internal storage + SD card). */
 object MediaRepo {
 
-    suspend fun loadSongs(context: Context, minDurationMs: Long = 15_000): List<Song> =
+    suspend fun loadSongs(context: Context, musicOnly: Boolean = true, minDurationMs: Long = 3_000): List<Song> =
         withContext(Dispatchers.IO) {
             val out = ArrayList<Song>()
             val projection = arrayOf(
@@ -24,9 +24,11 @@ object MediaRepo {
                 MediaStore.Audio.Media.DATE_ADDED,
                 MediaStore.Audio.Media.TRACK,
                 MediaStore.Audio.Media.DISPLAY_NAME,
+                MediaStore.Audio.Media.DATA,
             )
             val selection =
-                "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} >= ?"
+                (if (musicOnly) "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND " else "") +
+                    "${MediaStore.Audio.Media.DURATION} >= ?"
             context.contentResolver.query(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                 projection,
@@ -45,6 +47,7 @@ object MediaRepo {
                 val iDate = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
                 val iTrack = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
                 val iName = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+                val iData = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
                 while (c.moveToNext()) {
                     val id = c.getLong(iId)
                     val artist = c.getString(iArtist)?.takeIf { it != "<unknown>" } ?: "Unknown artist"
@@ -63,6 +66,7 @@ object MediaRepo {
                         dateAdded = c.getLong(iDate),
                         track = c.getInt(iTrack),
                         displayName = c.getString(iName) ?: "",
+                        path = c.getString(iData) ?: "",
                     )
                 }
             }

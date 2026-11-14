@@ -31,7 +31,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         Store.init(this)
+        com.sonara.player.data.ArtworkLoader.init(this)
         DspState.load()
+        requestHighRefreshRate()
         setContent {
             val accent by Store.accent.collectAsState()
             val bg by Store.bg.collectAsState()
@@ -39,6 +41,19 @@ class MainActivity : ComponentActivity() {
                 PermissionGate(vm)
             }
         }
+    }
+}
+
+private fun MainActivity.requestHighRefreshRate() {
+    // Without this many phones keep apps at 60 Hz even on a 120/144 Hz panel.
+    runCatching {
+        val d = if (Build.VERSION.SDK_INT >= 30) display else @Suppress("DEPRECATION") windowManager.defaultDisplay
+        d ?: return
+        val cur = d.mode
+        val best = d.supportedModes
+            .filter { it.physicalWidth == cur.physicalWidth && it.physicalHeight == cur.physicalHeight }
+            .maxByOrNull { it.refreshRate } ?: return
+        window.attributes = window.attributes.apply { preferredDisplayModeId = best.modeId }
     }
 }
 

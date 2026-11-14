@@ -15,7 +15,17 @@ data class Song(
     val dateAdded: Long,
     val track: Int,
     val displayName: String,
+    val path: String = "",
 ) {
+    val folder: String get() = path.substringBeforeLast('/', "")
+
+    val volume: String
+        get() = when {
+            path.startsWith("/storage/emulated/") -> "Internal storage"
+            path.startsWith("/storage/") -> "SD card / USB (${path.split('/').getOrElse(2) { "?" }})"
+            else -> "Other storage"
+        }
+
     val format: String
         get() = displayName.substringAfterLast('.', "").uppercase().ifBlank {
             mime.substringAfterLast('/').uppercase()

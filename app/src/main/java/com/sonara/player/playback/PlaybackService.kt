@@ -130,7 +130,9 @@ class PlaybackService : MediaSessionService() {
         val count = player.mediaItemCount
         val idx = player.currentMediaItemIndex
         if (count < 2 || idx != count - 1) return
-        val others = (0 until count - 1).map { player.getMediaItemAt(it) }.shuffled()
+        val others = (0 until count - 1).map { player.getMediaItemAt(it) }
+            .filter { m -> m.mediaId.toLongOrNull()?.let { !Store.isIgnored(it) } ?: true } // honour "ignore in shuffle"
+            .shuffled()
         player.removeMediaItems(0, idx)
         player.addMediaItems(others)
     }
@@ -142,6 +144,7 @@ class PlaybackService : MediaSessionService() {
             .setDisplayName(if (fav) "Remove from favorites" else "Add to favorites")
             .setIconResId(if (fav) R.drawable.ic_heart else R.drawable.ic_heart_outline)
             .setSessionCommand(SessionCommand(CMD_FAV, Bundle.EMPTY))
+            .setEnabled(true)
             .build()
     }
 

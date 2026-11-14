@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -30,6 +31,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -63,16 +69,17 @@ fun formatTime(ms: Long): String {
 @Composable
 fun Cover(song: Song?, modifier: Modifier = Modifier, px: Int = 256, corner: Dp = 4.dp) {
     val ctx = LocalContext.current
-    val bmp by produceState<Bitmap?>(null, song?.id, px) {
-        value = song?.let { ArtworkLoader.load(ctx, it.uri, px) }
+    val bmp by produceState<Bitmap?>(song?.let { ArtworkLoader.peek(it.uri, px) }, song?.id, px) {
+        value = song?.let { ArtworkLoader.peek(it.uri, px) ?: ArtworkLoader.load(ctx, it.uri, px) }
     }
     val shape = RoundedCornerShape(corner)
     Box(modifier.clip(shape).background(Color(0xFF282828)), contentAlignment = Alignment.Center) {
-        val b = bmp
-        if (b != null) {
-            Image(b.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        } else {
-            Icon(Icons.Default.MusicNote, null, tint = Color(0xFF7F7F7F), modifier = Modifier.fillMaxSize(0.45f))
+        androidx.compose.animation.Crossfade(bmp, animationSpec = androidx.compose.animation.core.tween(200), label = "cover") { b ->
+            if (b != null) {
+                Image(b.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            } else {
+                Icon(Icons.Default.MusicNote, null, tint = Color(0xFF7F7F7F), modifier = Modifier.fillMaxSize(0.45f))
+            }
         }
     }
 }
@@ -106,6 +113,9 @@ fun SongRow(
                 maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, color = TextSecondary,
             )
         }
+        if (song.id in Store.ignored.collectAsState().value) {
+            Icon(Icons.Default.VisibilityOff, "Ignored in shuffle", tint = TextSecondary, modifier = Modifier.size(18.dp).padding(end = 2.dp))
+        }
         if (song.id in fav) {
             Icon(Icons.Default.Favorite, null, tint = accent, modifier = Modifier.size(18.dp))
         }
@@ -123,6 +133,8 @@ fun SongMenu(
     var open by remember { mutableStateOf(false) }
     var pickPlaylist by remember { mutableStateOf(false) }
     val isFav = song.id in Store.favorites.collectAsState().value
+    val isIgnored = song.id in Store.ignored.collectAsState().value
+    val vm = LocalMainVm.current
     Box {
         IconButton(onClick = { open = true }) {
             Icon(Icons.Default.MoreVert, "More", tint = TextSecondary)
@@ -136,6 +148,22 @@ fun SongMenu(
             DropdownMenuItem(text = { Text("Play next") }, onClick = { player.playNext(song); open = false })
             DropdownMenuItem(text = { Text("Add to queue") }, onClick = { player.addToQueue(song); open = false })
             DropdownMenuItem(text = { Text("Add to playlist") }, onClick = { open = false; pickPlaylist = true })
+            DropdownMenuItem(
+                text = { Text(if (isIgnored) "Include in shuffle again" else "Ignore in shuffle") },
+                leadingIcon = { Icon(Icons.Default.VisibilityOff, null) },
+                onClick = { Store.toggleIgnored(song.id); open = false },
+            )
+            if (song.folder.isNotEmpty()) DropdownMenuItem(
+                text = { Text("Exclude this folder") },
+                onClick = {
+                    if (song.folder !in Store.excludedFolders.value) Store.toggleFolder(song.folder)
+                    open = false
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Blacklist song (hide everywhere)") },
+                onClick = { if (vm != null) vm.toggleBlacklist(song) else Store.toggleBlacklist(song.id); open = false },
+            )
             extra?.invoke { open = false }
         }
     }
@@ -192,4 +220,44 @@ fun EmptyHint(text: String) {
     Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
         Text(text, color = TextSecondary)
     }
+}
+
+/** Gives deep composables (song menus) access to the view model for blacklisting. */
+val LocalMainVm = staticCompositionLocalOf<com.sonara.player.MainViewModel?> { null }
+
+/**
+ * Playback position that advances every display frame (144 Hz friendly). Only the composable that
+ * reads the returned state recomposes, so the rest of the screen stays still.
+ */
+@Composable
+fun rememberLivePosition(player: PlayerController): State<Long> {
+    val anchor by player.anchor.collectAsState()
+    val pos = remember { mutableStateOf(anchor.positionMs) }
+    LaunchedEffect(anchor) {
+        pos.value = anchor.positionMs
+        if (anchor.playing) {
+            while (true) {
+                withFrameNanos { }
+                pos.value = anchor.positionMs + (android.os.SystemClock.elapsedRealtime() - anchor.atElapsed)
+            }
+        }
+    }
+    return pos
+}
+
+/** Heart that pops with a spring when it becomes a favorite. */
+@Composable
+fun HeartIcon(fav: Boolean, accent: Color, size: Dp) {
+    val scale = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(fav) {
+        if (fav) {
+            scale.animateTo(1.35f, androidx.compose.animation.core.spring(0.35f, androidx.compose.animation.core.Spring.StiffnessHigh))
+            scale.animateTo(1f, androidx.compose.animation.core.spring(0.5f))
+        }
+    }
+    Icon(
+        if (fav) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favorite",
+        tint = if (fav) accent else MaterialTheme.colorScheme.onBackground,
+        modifier = Modifier.size(size).graphicsLayer { scaleX = scale.value; scaleY = scale.value },
+    )
 }
