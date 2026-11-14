@@ -10,6 +10,9 @@ import android.os.Bundle
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Metadata
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Tracks
 import androidx.media3.common.Player
 import androidx.media3.common.util.BitmapLoader
 import androidx.media3.common.util.UnstableApi
@@ -59,7 +62,9 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
         instance = this
         Store.init(this)
+        com.sonara.player.data.ArtworkLoader.init(this)
         DspState.load()
+        DspState.rgOn = Store.replayGain.value
 
         // High-quality pipeline: float output for hi-res, our DSP chain in front of the sink.
         val renderers = object : DefaultRenderersFactory(this) {
@@ -111,13 +116,49 @@ class PlaybackService : MediaSessionService() {
                 refreshExtras()
             }
 
-            override fun onIsPlayingChanged(isPlaying: Boolean) = refreshExtras()
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) consecutiveErrors = 0
+                if (!isPlaying) saveResumePos()
+                refreshExtras()
+            }
+
+            override fun onTracksChanged(tracks: Tracks) = readReplayGain(tracks)
+            override fun onMetadata(metadata: Metadata) = scanForGain(metadata)
+
+            // a deleted / corrupt file must not stop the music: drop it and carry on
+            override fun onPlayerError(error: PlaybackException) {
+                consecutiveErrors++
+                if (consecutiveErrors > 5 || player.mediaItemCount <= 1) return
+                player.removeMediaItem(player.currentMediaItemIndex)
+                player.prepare()
+                player.play()
+            }
             override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
-                if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) refreshExtras()
+                if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
+                    refreshExtras()
+                    Store.saveResumeQueue((0 until player.mediaItemCount).mapNotNull { player.getMediaItemAt(it).mediaId.toLongOrNull() })
+                }
             }
         })
 
+        // playback options
+        player.setPlaybackSpeed(Store.speed.value)
+        player.skipSilenceEnabled = Store.skipSilence.value
+        scope.launch { Store.speed.drop(1).collect { player.setPlaybackSpeed(it) } }
+        scope.launch { Store.skipSilence.drop(1).collect { player.skipSilenceEnabled = it } }
+        scope.launch { fadeLoop() }
+        DspState.rgOn = Store.replayGain.value
+        scope.launch { Store.replayGain.drop(1).collect { DspState.setReplayGainEnabled(it) } }
+        // remember where we were so the app can resume after a restart
+        scope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(5000)
+                if (player.mediaItemCount > 0) saveResumePos()
+            }
+        }
+
         scope.launch { Store.favorites.drop(1).collect { refreshExtras() } }
+        scope.launch { Store.heartCompact.drop(1).collect { refreshExtras() } }
     }
 
     /**
@@ -137,19 +178,67 @@ class PlaybackService : MediaSessionService() {
         player.addMediaItems(others)
     }
 
+    /**
+     * Fade through track changes: volume ramps down over the last N seconds of a song and back up over
+     * the first N seconds of the next one (smoothstep curve).
+     */
+    private suspend fun fadeLoop() {
+        while (true) {
+            kotlinx.coroutines.delay(50)
+            val fade = Store.fadeSec.value * 1000L
+            if (fade <= 0L) { if (player.volume != 1f) player.volume = 1f; continue }
+            if (!player.isPlaying) continue
+            val dur = player.duration
+            if (dur <= 0L || dur < fade * 2) { if (player.volume != 1f) player.volume = 1f; continue }
+            val pos = player.currentPosition
+            val v = minOf(pos.toFloat() / fade, (dur - pos).toFloat() / fade).coerceIn(0f, 1f)
+            player.volume = v * v * (3f - 2f * v)
+        }
+    }
+
+    private var consecutiveErrors = 0
+    private val gainRegex = Regex("""REPLAYGAIN_(TRACK|ALBUM)_GAIN\D*?(-?\d+(?:[.,]\d+)?)""", RegexOption.IGNORE_CASE)
+    private var haveTrackGain = false
+
+    private fun saveResumePos() {
+        Store.saveResumePos(player.currentMediaItemIndex, player.currentPosition.coerceAtLeast(0))
+    }
+
+    /** Best effort: reads REPLAYGAIN_* tags (ID3 TXXX / Vorbis comments) and feeds the DSP chain. */
+    private fun scanForGain(md: Metadata) {
+        for (i in 0 until md.length()) {
+            val m = gainRegex.find(md.get(i).toString()) ?: continue
+            val v = m.groupValues[2].replace(',', '.').toFloatOrNull() ?: continue
+            val isTrack = m.groupValues[1].equals("TRACK", ignoreCase = true)
+            if (isTrack || !haveTrackGain) {
+                haveTrackGain = haveTrackGain || isTrack
+                DspState.setTrackGain(v)
+            }
+        }
+    }
+
+    private fun readReplayGain(tracks: Tracks) {
+        haveTrackGain = false
+        DspState.setTrackGain(0f)
+        for (g in tracks.groups) {
+            if (g.type != C.TRACK_TYPE_AUDIO) continue
+            for (i in 0 until g.length) g.getTrackFormat(i).metadata?.let { scanForGain(it) }
+        }
+    }
+
     private fun favButton(): CommandButton {
         val id = player.currentMediaItem?.mediaId?.toLongOrNull()
         val fav = id != null && Store.isFavorite(id)
-        return CommandButton.Builder()
+        return CommandButton.Builder(if (fav) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED)
             .setDisplayName(if (fav) "Remove from favorites" else "Add to favorites")
-            .setIconResId(if (fav) R.drawable.ic_heart else R.drawable.ic_heart_outline)
             .setSessionCommand(SessionCommand(CMD_FAV, Bundle.EMPTY))
-            .setEnabled(true)
+            // Android 13+ has 5 slots: overflow = extra slots 4/5 (expanded view), BACK = replaces Previous (compact view too)
+            .setSlots(if (Store.heartCompact.value) CommandButton.SLOT_BACK else CommandButton.SLOT_OVERFLOW)
             .build()
     }
 
     private fun refreshExtras() {
-        session?.setCustomLayout(ImmutableList.of(favButton()))
+        session?.setMediaButtonPreferences(ImmutableList.of(favButton()))
         scope.launch { PlayerWidget.pushFromPlayer(this@PlaybackService, player) }
     }
 
@@ -162,7 +251,7 @@ class PlaybackService : MediaSessionService() {
                 .buildUpon().add(SessionCommand(CMD_FAV, Bundle.EMPTY)).build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(cmds)
-                .setCustomLayout(ImmutableList.of(favButton()))
+                .setMediaButtonPreferences(ImmutableList.of(favButton()))
                 .build()
         }
 

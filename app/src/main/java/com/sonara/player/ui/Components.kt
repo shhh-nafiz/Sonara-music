@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -260,4 +263,43 @@ fun HeartIcon(fav: Boolean, accent: Color, size: Dp) {
         tint = if (fav) accent else MaterialTheme.colorScheme.onBackground,
         modifier = Modifier.size(size).graphicsLayer { scaleX = scale.value; scaleY = scale.value },
     )
+}
+
+/** A–Z strip on the right edge; touch or drag on it to jump through a long list. */
+@Composable
+fun AlphabetScroller(letters: List<Char>, modifier: Modifier = Modifier, onSelect: (Char) -> Unit) {
+    val accent = LocalAccent.current
+    var active by remember { mutableStateOf<Char?>(null) }
+    Box(modifier) {
+        Column(
+            Modifier.fillMaxSize().padding(end = 2.dp)
+                .pointerInput(letters) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown()
+                        fun pick(y: Float) {
+                            val i = ((y / size.height) * letters.size).toInt().coerceIn(0, letters.lastIndex)
+                            val c = letters[i]
+                            if (c != active) { active = c; onSelect(c) }
+                        }
+                        pick(down.position.y); down.consume()
+                        do {
+                            val ev = awaitPointerEvent()
+                            ev.changes.forEach { if (it.pressed) { pick(it.position.y); it.consume() } }
+                        } while (ev.changes.any { it.pressed })
+                        active = null
+                    }
+                },
+            verticalArrangement = Arrangement.SpaceEvenly,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            letters.forEach { Text(it.toString(), fontSize = 10.sp, color = accent, fontWeight = FontWeight.Bold, modifier = Modifier.width(22.dp)) }
+        }
+        active?.let {
+            Box(
+                Modifier.align(Alignment.CenterStart).padding(end = 40.dp).size(64.dp)
+                    .clip(RoundedCornerShape(16.dp)).background(accent),
+                contentAlignment = Alignment.Center,
+            ) { Text(it.toString(), fontSize = 32.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.background) }
+        }
+    }
 }

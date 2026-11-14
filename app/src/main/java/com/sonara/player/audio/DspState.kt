@@ -44,6 +44,12 @@ object DspState {
     @Volatile var preampDb: Float = 0f
     @Volatile var bassBoostDb: Float = 0f
     @Volatile var version: Int = 0
+    /** ReplayGain / loudness normalization (dB for the current track, applied in the DSP chain). */
+    @Volatile var rgOn: Boolean = false
+    @Volatile var rgDb: Float = 0f
+
+    fun setReplayGainEnabled(on: Boolean) { rgOn = on; changed() }
+    fun setTrackGain(db: Float) { rgDb = db.coerceIn(-18f, 12f); changed() }
 
     private val _presetName = MutableStateFlow("Flat")
     val presetName: StateFlow<String> = _presetName

@@ -39,7 +39,7 @@ class PlayerController(private val app: Context) {
     private var controller: MediaController? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var ticker: Job? = null
-    private var pending: (() -> Unit)? = null
+    private val pending = ArrayList<() -> Unit>()
     private var contextOrdered: List<Song> = emptyList()
 
     private val _ui = MutableStateFlow(PlayerUi(shuffle = Store.shuffle, repeat = Store.repeatMode))
@@ -66,7 +66,7 @@ class PlayerController(private val app: Context) {
                 }
             })
             publishQueue(); publish()
-            pending?.invoke(); pending = null
+            pending.toList().forEach { it() }; pending.clear()
         }, MoreExecutors.directExecutor())
 
         // re-sync the anchor now and then so extrapolation never drifts
@@ -105,7 +105,7 @@ class PlayerController(private val app: Context) {
 
     private fun withController(block: (MediaController) -> Unit) {
         val c = controller
-        if (c != null) block(c) else pending = { controller?.let(block) }
+        if (c != null) block(c) else pending.add { controller?.let(block) }
     }
 
     private fun item(s: Song): MediaItem = MediaItem.Builder()
@@ -218,6 +218,24 @@ class PlayerController(private val app: Context) {
             val id = c.getMediaItemAt(i).mediaId.toLongOrNull() ?: continue
             if (id !in visible) c.removeMediaItem(i)
         }
+    }
+
+    fun moveItem(from: Int, to: Int) = withController { c ->
+        if (from in 0 until c.mediaItemCount && to in 0 until c.mediaItemCount) c.moveMediaItem(from, to)
+    }
+
+    /** Put back the queue from the last session (paused, at the saved position) if nothing is loaded. */
+    fun restore(byId: Map<Long, Song>) = withController { c ->
+        if (c.mediaItemCount > 0) return@withController
+        val ids = Store.resumeQueue()
+        val songs = ids.mapNotNull { byId[it] }
+        if (songs.isEmpty()) return@withController
+        val curId = ids.getOrNull(Store.resumeIndex())
+        val idx = songs.indexOfFirst { it.id == curId }.coerceAtLeast(0)
+        contextOrdered = songs
+        c.setMediaItems(songs.map(::item), idx, Store.resumePos())
+        c.prepare()
+        publish()
     }
 
     fun release() {

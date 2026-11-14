@@ -60,6 +60,12 @@ fun SettingsScreen(vm: MainViewModel, onManage: () -> Unit, onBack: () -> Unit) 
     val accent by Store.accent.collectAsState()
     val bg by Store.bg.collectAsState()
     val adaptive by Store.adaptive.collectAsState()
+    val heartCompact by Store.heartCompact.collectAsState()
+    val fadeSec by Store.fadeSec.collectAsState()
+    val speed by Store.speed.collectAsState()
+    val skipSilence by Store.skipSilence.collectAsState()
+    val replayGain by Store.replayGain.collectAsState()
+    val dynAccent by Store.dynamicAccent.collectAsState()
     val viz by Store.vizStyle.collectAsState()
     val songs by vm.songs.collectAsState()
     val acc = Color(accent)
@@ -97,6 +103,68 @@ fun SettingsScreen(vm: MainViewModel, onManage: () -> Unit, onBack: () -> Unit) 
                 adaptive, { Store.setAdaptive(it) },
                 colors = SwitchDefaults.colors(checkedTrackColor = acc, checkedThumbColor = Color.White),
             )
+        }
+
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Heart in compact lock-screen controls", fontWeight = FontWeight.Medium)
+                Text("Puts the favorite heart where Previous normally is so it shows on the lock screen and notch. Off = heart appears in the expanded controls.", fontSize = 12.sp, color = TextSecondary)
+            }
+            Switch(
+                heartCompact, { Store.setHeartCompact(it) },
+                colors = SwitchDefaults.colors(checkedTrackColor = acc, checkedThumbColor = Color.White),
+            )
+        }
+
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Accent follows album cover", fontWeight = FontWeight.Medium)
+                Text("The accent color changes with the song that is playing", fontSize = 12.sp, color = TextSecondary)
+            }
+            Switch(
+                dynAccent, { Store.setDynamicAccent(it) },
+                colors = SwitchDefaults.colors(checkedTrackColor = acc, checkedThumbColor = Color.White),
+            )
+        }
+
+        Header("Playback")
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            Row {
+                Text("Fade between songs", fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                Text(if (fadeSec == 0) "off" else "$fadeSec s", color = TextSecondary)
+            }
+            Slider(
+                fadeSec.toFloat(), { Store.setFadeSec(it.toInt()) }, valueRange = 0f..12f, steps = 11,
+                colors = SliderDefaults.colors(thumbColor = acc, activeTrackColor = acc),
+            )
+            Row {
+                Text("Playback speed", fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                Text("%.2fx".format(speed), color = TextSecondary)
+            }
+            Slider(
+                speed, { Store.setSpeed(Math.round(it * 20f) / 20f) }, valueRange = 0.5f..2f,
+                colors = SliderDefaults.colors(thumbColor = acc, activeTrackColor = acc),
+            )
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Loudness normalization (ReplayGain)", fontWeight = FontWeight.Medium)
+                Text("Evens out volume between songs using ReplayGain tags in your files (songs without tags are unchanged)", fontSize = 12.sp, color = TextSecondary)
+            }
+            Switch(replayGain, { Store.setReplayGain(it) }, colors = SwitchDefaults.colors(checkedTrackColor = acc, checkedThumbColor = Color.White))
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Skip silence", fontWeight = FontWeight.Medium)
+                Text("Jumps over silent gaps inside tracks", fontSize = 12.sp, color = TextSecondary)
+            }
+            Switch(skipSilence, { Store.setSkipSilence(it) }, colors = SwitchDefaults.colors(checkedTrackColor = acc, checkedThumbColor = Color.White))
         }
 
         Header("Visualizer style")

@@ -21,12 +21,12 @@ jobs:
       - name: Prepare Android SDK
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" || true
 
       # No gradle wrapper jar in the repo, so install Gradle directly
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: 8.7
+          gradle-version: 8.9
 
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon

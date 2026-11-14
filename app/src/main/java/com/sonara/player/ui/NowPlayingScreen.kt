@@ -1,8 +1,10 @@
 package com.sonara.player.ui
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +28,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -57,6 +61,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -82,8 +88,10 @@ fun NowPlayingScreen(
     song: Song,
     onClose: () -> Unit,
     onOpenEq: () -> Unit,
+    dragModifier: Modifier = Modifier,
 ) {
     val ctx = LocalContext.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val ui by vm.player.ui.collectAsState()
     val favs by Store.favorites.collectAsState()
     val adaptive by Store.adaptive.collectAsState()
@@ -119,7 +127,7 @@ fun NowPlayingScreen(
                 .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp),
         ) {
             // top bar
-            Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(dragModifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onClose) { Icon(Icons.Default.KeyboardArrowDown, "Close", Modifier.size(32.dp)) }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("PLAYING FROM YOUR LIBRARY", fontSize = 10.sp, letterSpacing = 1.sp, color = TextSecondary)
@@ -154,11 +162,26 @@ fun NowPlayingScreen(
             Spacer(Modifier.height(24.dp))
             // title + favorite heart (like Spotify)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(song.title, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(song.artist, fontSize = 16.sp, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                androidx.compose.animation.AnimatedContent(
+                    targetState = song,
+                    modifier = Modifier.weight(1f),
+                    transitionSpec = {
+                        (androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(280)) { it / 3 } +
+                            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(280))) togetherWith
+                            (androidx.compose.animation.slideOutVertically(androidx.compose.animation.core.tween(180)) { -it / 3 } +
+                                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(150)))
+                    },
+                    label = "title",
+                ) { s ->
+                    Column {
+                        Text(s.title, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(s.artist, fontSize = 16.sp, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
-                IconButton(onClick = { Store.toggleFavorite(song.id) }) {
+                IconButton(onClick = {
+                    Store.toggleFavorite(song.id)
+                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                }) {
                     HeartIcon(isFav, accent, 30.dp)
                 }
             }
@@ -259,31 +282,83 @@ private fun QueueList(vm: MainViewModel) {
     val queue by vm.player.queue.collectAsState()
     val idx by vm.player.queueIndex.collectAsState()
     val byId by vm.byId.collectAsState()
-    val playlists by Store.playlists.collectAsState()
-    val ui by vm.player.ui.collectAsState()
+    val accent = LocalAccent.current
+    val rowPx = with(androidx.compose.ui.platform.LocalDensity.current) { 64.dp.toPx() }
+    // stable keys (same song twice gets #0, #1) so rows animate instead of re-creating when reordered
+    val keys = remember(queue) {
+        val seen = HashMap<Long, Int>()
+        queue.map { id -> val n = seen[id] ?: 0; seen[id] = n + 1; "$id#$n" }
+    }
+    val state = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = (idx - 2).coerceAtLeast(0))
+    var dragKey by remember { mutableStateOf<String?>(null) }
+    var offset by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    var busy by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(queue) { busy = false }
+
     Text("Queue", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-    LazyColumn(Modifier.fillMaxWidth().height(480.dp)) {
-        itemsIndexed(queue, key = { i, id -> "$i-$id" }) { i, id ->
+    Text("Drag the handle to reorder", fontSize = 12.sp, color = TextSecondary, modifier = Modifier.padding(horizontal = 16.dp))
+    LazyColumn(state = state, modifier = Modifier.fillMaxWidth().height(480.dp)) {
+        itemsIndexed(queue, key = { i, _ -> keys[i] }) { i, id ->
             val s = byId[id] ?: return@itemsIndexed
-            SongRow(s, playing = i == idx, player = vm.player, playlists = playlists, onClick = { vm.player.playQueueIndex(i) },
-                extraMenu = { dismiss ->
-                    if (i != idx) androidx.compose.material3.DropdownMenuItem(
-                        text = { Text("Remove from queue") },
-                        onClick = { vm.player.removeFromQueue(i); dismiss() },
+            val key = keys[i]
+            val dragging = dragKey == key
+            val curIndex by androidx.compose.runtime.rememberUpdatedState(i)
+            Row(
+                Modifier.fillMaxWidth().height(64.dp)
+                    .then(
+                        if (dragging) Modifier.zIndex(1f).graphicsLayer { translationY = offset }
+                            .background(MaterialTheme.colorScheme.surface)
+                        else Modifier.animateItem()
                     )
-                })
+                    .clickable { vm.player.playQueueIndex(i) }
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Cover(s, Modifier.size(48.dp), px = 128)
+                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                    Text(
+                        s.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 15.sp,
+                        color = if (i == idx) accent else MaterialTheme.colorScheme.onSurface,
+                        fontWeight = if (i == idx) FontWeight.Bold else FontWeight.Normal,
+                    )
+                    Text(s.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, color = TextSecondary)
+                }
+                if (i != idx) IconButton(onClick = { vm.player.removeFromQueue(i) }) {
+                    Icon(Icons.Default.Close, "Remove", tint = TextSecondary)
+                }
+                Icon(
+                    Icons.Default.DragHandle, "Reorder", tint = TextSecondary,
+                    modifier = Modifier.size(40.dp).padding(8.dp).pointerInput(key) {
+                        detectDragGestures(
+                            onDragStart = { dragKey = key; offset = 0f },
+                            onDragEnd = { dragKey = null; offset = 0f },
+                            onDragCancel = { dragKey = null; offset = 0f },
+                        ) { change, drag ->
+                            change.consume()
+                            offset += drag.y
+                            if (busy) return@detectDragGestures
+                            val cur = curIndex
+                            if (offset > rowPx / 2 && cur < queue.size - 1) {
+                                busy = true; vm.player.moveItem(cur, cur + 1); offset -= rowPx
+                            } else if (offset < -rowPx / 2 && cur > 0) {
+                                busy = true; vm.player.moveItem(cur, cur - 1); offset += rowPx
+                            }
+                        }
+                    },
+                )
+            }
         }
     }
 }
 
 @Composable
-fun MiniPlayer(vm: MainViewModel, song: Song, onClick: () -> Unit) {
+fun MiniPlayer(vm: MainViewModel, song: Song, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val ui by vm.player.ui.collectAsState()
     val favs by Store.favorites.collectAsState()
     val accent = LocalAccent.current
     val isFav = song.id in favs
     Column(
-        Modifier.fillMaxWidth().padding(horizontal = 8.dp).clip(RoundedCornerShape(10.dp))
+        modifier.fillMaxWidth().padding(horizontal = 8.dp).clip(RoundedCornerShape(10.dp))
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)).clickable(onClick = onClick),
     ) {
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {

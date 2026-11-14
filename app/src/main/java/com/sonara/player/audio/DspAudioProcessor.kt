@@ -77,8 +77,9 @@ class DspAudioProcessor : BaseAudioProcessor() {
         if (bass > maxBoost) maxBoost = bass
         // automatic headroom: pull the level down by the biggest boost so nothing clips
         val pre = if (on) DspState.preampDb - maxBoost else 0f
-        preGain = 10.0.pow(pre / 20.0)
-        processing = on && (active.any { it } || abs(DspState.preampDb) > 0.05f)
+        val rg = if (DspState.rgOn) DspState.rgDb else 0f
+        preGain = 10.0.pow((pre + rg) / 20.0)
+        processing = (on && (active.any { it } || abs(DspState.preampDb) > 0.05f)) || abs(rg) > 0.05f
     }
 
     private fun set(i: Int, b0: Double, b1: Double, b2: Double, a0: Double, a1: Double, a2: Double) {

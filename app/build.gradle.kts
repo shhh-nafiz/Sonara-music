@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.sonara.player"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.sonara.player"
@@ -46,7 +46,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.animation:animation")
 
-    val media3 = "1.4.1"
+    val media3 = "1.6.1"
     implementation("androidx.media3:media3-exoplayer:$media3")
     implementation("androidx.media3:media3-session:$media3")
     implementation("androidx.media3:media3-common:$media3")

@@ -34,6 +34,24 @@ object Store {
     val offVolumes: StateFlow<Set<String>> = _offVolumes
     private val _minDur = MutableStateFlow(20)
     val minDurationSec: StateFlow<Int> = _minDur
+    private val _heartCompact = MutableStateFlow(false)
+    /** true = heart replaces the Previous button so it shows in compact lock-screen / notch controls. */
+    val heartCompact: StateFlow<Boolean> = _heartCompact
+    private val _fadeSec = MutableStateFlow(0)
+    /** Fade-out/fade-in length around every track change (0 = off). */
+    val fadeSec: StateFlow<Int> = _fadeSec
+    private val _speed = MutableStateFlow(1f)
+    val speed: StateFlow<Float> = _speed
+    private val _skipSilence = MutableStateFlow(false)
+    val skipSilence: StateFlow<Boolean> = _skipSilence
+    private val _sort = MutableStateFlow(0)
+    /** 0 title, 1 artist, 2 recently added, 3 duration, 4 album */
+    val sortMode: StateFlow<Int> = _sort
+    private val _rgOn = MutableStateFlow(false)
+    val replayGain: StateFlow<Boolean> = _rgOn
+    private val _dynAccent = MutableStateFlow(false)
+    /** Accent color follows the cover of the playing song. */
+    val dynamicAccent: StateFlow<Boolean> = _dynAccent
     private val _musicOnly = MutableStateFlow(true)
     val musicOnly: StateFlow<Boolean> = _musicOnly
 
@@ -63,6 +81,13 @@ object Store {
         _offVolumes.value = sp.getStringSet("offVolumes", emptySet())!!.toSet()
         _minDur.value = sp.getInt("minDur", 20)
         _musicOnly.value = sp.getBoolean("musicOnly", true)
+        _rgOn.value = sp.getBoolean("rg", false)
+        _dynAccent.value = sp.getBoolean("dynAccent", false)
+        _fadeSec.value = sp.getInt("fadeSec", 0)
+        _speed.value = sp.getFloat("speed", 1f)
+        _skipSilence.value = sp.getBoolean("skipSilence", false)
+        _sort.value = sp.getInt("sort", 0)
+        _heartCompact.value = sp.getBoolean("heartCompact", false)
         runCatching {
             val arr = JSONArray(sp.getString("playlists", "[]"))
             _playlists.value = (0 until arr.length()).map {
@@ -155,6 +180,21 @@ object Store {
         sp.edit().putStringSet("offVolumes", s).apply()
     }
     fun setMinDuration(sec: Int) { _minDur.value = sec; sp.edit().putInt("minDur", sec).apply() }
+    fun setHeartCompact(b: Boolean) { _heartCompact.value = b; sp.edit().putBoolean("heartCompact", b).apply() }
+    fun setFadeSec(v: Int) { _fadeSec.value = v; sp.edit().putInt("fadeSec", v).apply() }
+    fun setSpeed(v: Float) { _speed.value = v; sp.edit().putFloat("speed", v).apply() }
+    fun setSkipSilence(b: Boolean) { _skipSilence.value = b; sp.edit().putBoolean("skipSilence", b).apply() }
+    fun setSort(i: Int) { _sort.value = i; sp.edit().putInt("sort", i).apply() }
+    fun setReplayGain(b: Boolean) { _rgOn.value = b; sp.edit().putBoolean("rg", b).apply() }
+    fun setDynamicAccent(b: Boolean) { _dynAccent.value = b; sp.edit().putBoolean("dynAccent", b).apply() }
+
+    // ---- resume state (queue + position survive app restarts) ----
+    fun saveResumeQueue(queue: List<Long>) { sp.edit().putString("rQueue", queue.joinToString(",")).apply() }
+    fun saveResumePos(index: Int, positionMs: Long) { sp.edit().putInt("rIndex", index).putLong("rPos", positionMs).apply() }
+    fun resumeQueue(): List<Long> = sp.getString("rQueue", "")!!.split(',').mapNotNull { it.toLongOrNull() }
+    fun resumeIndex() = sp.getInt("rIndex", 0)
+    fun resumePos() = sp.getLong("rPos", 0L)
+
     fun setMusicOnly(b: Boolean) { _musicOnly.value = b; sp.edit().putBoolean("musicOnly", b).apply() }
     var foldersInitialised: Boolean
         get() = sp.getBoolean("foldersInit", false)

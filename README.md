@@ -28,3 +28,14 @@ Push this folder to a GitHub repo, open the Actions tab > "Build APK" > Run work
 - Blacklist: hides a song everywhere and never plays it (song menu > Blacklist, or Manage > Blacklist)
 - Ignore in shuffle: song stays in the library but shuffle skips it until you un-ignore it (song menu, or Manage > Ignored, search to find it)
 - WhatsApp / Telegram / recorder / ringtone folders are excluded automatically on first run
+
+## Motion & playback extras
+- Player is a draggable sheet: swipe the mini player up / the player's top bar down, it follows your finger and springs into place
+- Animated page transitions, animated list changes, animated song title/cover changes
+- Settings > Playback: fade between songs (0-12 s), playback speed 0.5x-2x, skip silence
+- Library: sort songs (title / artist / recent / length / album) and browse by folder
+
+## Latest additions
+- Loudness normalization (ReplayGain tags), skips unplayable files automatically
+- Drag-to-reorder queue, A-Z fast scroller, accent color that follows the album cover
+- Resumes your queue and position after the app is closed

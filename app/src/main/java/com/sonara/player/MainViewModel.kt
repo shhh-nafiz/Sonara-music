@@ -31,6 +31,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _loading = MutableStateFlow(false)
     val loading: StateFlow<Boolean> = _loading
     private var loaded = false
+    private var restored = false
 
     /** The visible library: raw minus blacklisted songs, excluded folders, disabled storages, short clips. */
     val songs: StateFlow<List<Song>> = combine(
@@ -67,6 +68,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             _raw.value = list
             loaded = true
+            if (!restored && list.isNotEmpty()) {
+                restored = true
+                player.restore(
+                    list.filter { it.id !in Store.blacklist.value && it.folder !in Store.excludedFolders.value }
+                        .associateBy { it.id }
+                )
+            }
             _loading.value = false
         }
     }

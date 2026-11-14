@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -56,6 +57,7 @@ import com.sonara.player.data.MediaRepo
 import com.sonara.player.data.Song
 import com.sonara.player.data.Store
 import java.util.Calendar
+import kotlinx.coroutines.launch
 
 /** What a detail page shows. */
 data class Detail(val kind: String, val key: String) // kind: album | artist | playlist | favorites | recents
@@ -79,7 +81,8 @@ fun HomeScreen(vm: MainViewModel, onOpen: (Detail) -> Unit, onSettings: () -> Un
 
     val favs = favIds.mapNotNull { byId[it] }
     val recents = recentIds.mapNotNull { byId[it] }
-    val added = songs.sortedByDescending { it.dateAdded }.take(20)
+    val added = remember(songs) { songs.sortedByDescending { it.dateAdded }.take(20) }
+    val loading by vm.loading.collectAsState()
 
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)) {
         item {
@@ -121,7 +124,11 @@ fun HomeScreen(vm: MainViewModel, onOpen: (Detail) -> Unit, onSettings: () -> Un
             SectionTitle("Recently added")
             SongCarousel(added, ui.currentId) { vm.player.play(added, it.id) }
         }
-        if (songs.isEmpty()) item { EmptyHint("No music found yet. Add songs to your phone and rescan in Settings.") }
+        if (songs.isEmpty()) item {
+            if (loading) Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                androidx.compose.material3.CircularProgressIndicator(color = accent)
+            } else EmptyHint("No music found yet. Add songs to your phone, then rescan in Settings → Manage library.")
+        }
     }
 }
 
@@ -186,7 +193,7 @@ fun SearchScreen(vm: MainViewModel) {
         )
         LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp)) {
             items(res, key = { it.id }) { s ->
-                SongRow(s, s.id == ui.currentId, vm.player, playlists, { vm.player.play(res, s.id) })
+                SongRow(s, s.id == ui.currentId, vm.player, playlists, { vm.player.play(res, s.id) }, modifier = Modifier.animateItem())
             }
             if (q.isNotBlank() && res.isEmpty()) item { EmptyHint("No results for \"$q\"") }
         }
@@ -195,7 +202,9 @@ fun SearchScreen(vm: MainViewModel) {
 
 // ------------------------------------------------------------------ LIBRARY
 
-private val TABS = listOf("Songs", "Albums", "Artists", "Playlists", "Favorites")
+private val TABS = listOf("Songs", "Albums", "Artists", "Folders", "Playlists", "Favorites")
+private val SORTS = listOf("Title", "Artist", "Recent", "Length", "Album")
+private fun folderName(f: String) = f.substringAfterLast('/').ifEmpty { f }
 
 @Composable
 fun LibraryScreen(vm: MainViewModel, onOpen: (Detail) -> Unit, onSettings: () -> Unit) {
@@ -205,9 +214,21 @@ fun LibraryScreen(vm: MainViewModel, onOpen: (Detail) -> Unit, onSettings: () ->
     val playlists by Store.playlists.collectAsState()
     val favIds by Store.favorites.collectAsState()
     val accent = LocalAccent.current
+    val loading by vm.loading.collectAsState()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val albums = remember(songs) { MediaRepo.albums(songs) }
     val artists = remember(songs) { MediaRepo.artists(songs) }
+    val sort by Store.sortMode.collectAsState()
+    val sorted = remember(songs, sort) {
+        when (sort) {
+            0 -> songs.sortedBy { it.title.lowercase() }
+            1 -> songs.sortedBy { it.artist.lowercase() }
+            2 -> songs.sortedByDescending { it.dateAdded }
+            3 -> songs.sortedByDescending { it.durationMs }
+            else -> songs.sortedBy { it.album.lowercase() }
+        }
+    }
+    val folders = remember(songs) { songs.groupBy { it.folder }.toList().sortedBy { it.first.lowercase() } }
 
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(Modifier.padding(start = 16.dp, top = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -226,11 +247,49 @@ fun LibraryScreen(vm: MainViewModel, onOpen: (Detail) -> Unit, onSettings: () ->
             }
         }
         when (tab) {
-            0 -> LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)) {
-                item { PlayHeader(songs, vm, "${songs.size} songs") }
-                items(songs, key = { it.id }) { s ->
-                    SongRow(s, s.id == ui.currentId, vm.player, playlists, { vm.player.play(songs, s.id) })
+            0 -> Box(Modifier.fillMaxSize()) {
+              val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+              val scope = androidx.compose.runtime.rememberCoroutineScope()
+              val letterIndex = remember(sorted, sort) {
+                  val m = LinkedHashMap<Char, Int>()
+                  if (sort == 0 || sort == 1 || sort == 4) {
+                      sorted.forEachIndexed { i, s ->
+                          val text = when (sort) { 0 -> s.title; 1 -> s.artist; else -> s.album }
+                          val c = text.trim().firstOrNull()?.uppercaseChar() ?: '#'
+                          m.putIfAbsent(if (c in 'A'..'Z') c else '#', i)
+                      }
+                  }
+                  m
+              }
+              LazyColumn(state = listState, contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)) {
+                item {
+                    LazyRow(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(SORTS.size) { i ->
+                            val sel = sort == i
+                            Text(
+                                SORTS[i], fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                                color = if (sel) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onBackground,
+                                modifier = Modifier.clip(RoundedCornerShape(50))
+                                    .background(if (sel) accent else MaterialTheme.colorScheme.surface)
+                                    .clickable { Store.setSort(i) }.padding(horizontal = 14.dp, vertical = 7.dp),
+                            )
+                        }
+                    }
                 }
+                item { PlayHeader(sorted, vm, "${songs.size} songs") }
+                items(sorted, key = { it.id }) { s ->
+                    SongRow(s, s.id == ui.currentId, vm.player, playlists, { vm.player.play(sorted, s.id) }, modifier = Modifier.animateItem())
+                }
+                if (songs.isEmpty()) item {
+                    if (loading) Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                        androidx.compose.material3.CircularProgressIndicator(color = accent)
+                    } else EmptyHint("No songs found")
+                }
+              }
+              if (letterIndex.size > 1) AlphabetScroller(
+                  letterIndex.keys.toList(),
+                  Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(26.dp).padding(vertical = 12.dp),
+              ) { c -> scope.launch { listState.scrollToItem(2 + (letterIndex[c] ?: 0)) } }
             }
             1 -> LazyColumn {
                 items(albums, key = { it.id }) { a ->
@@ -243,6 +302,11 @@ fun LibraryScreen(vm: MainViewModel, onOpen: (Detail) -> Unit, onSettings: () ->
                 }
             }
             3 -> LazyColumn {
+                items(folders, key = { it.first }) { (f, list) ->
+                    ListRow(folderName(f), "${list.size} songs • $f", list.first()) { onOpen(Detail("folder", f)) }
+                }
+            }
+            4 -> LazyColumn {
                 if (playlists.isEmpty()) item { EmptyHint("No playlists yet. Use ⋮ on any song → Add to playlist.") }
                 items(playlists, key = { it.id }) { p ->
                     ListRow(p.name, "${p.songIds.size} songs", byId[p.songIds.firstOrNull()]) { onOpen(Detail("playlist", p.id)) }
@@ -254,7 +318,7 @@ fun LibraryScreen(vm: MainViewModel, onOpen: (Detail) -> Unit, onSettings: () ->
                     item { PlayHeader(favs, vm, "${favs.size} liked songs") }
                     if (favs.isEmpty()) item { EmptyHint("Tap the heart on any song to add it here.") }
                     items(favs, key = { it.id }) { s ->
-                        SongRow(s, s.id == ui.currentId, vm.player, playlists, { vm.player.play(favs, s.id) })
+                        SongRow(s, s.id == ui.currentId, vm.player, playlists, { vm.player.play(favs, s.id) }, modifier = Modifier.animateItem())
                     }
                 }
             }
@@ -299,6 +363,7 @@ fun DetailScreen(vm: MainViewModel, d: Detail, onBack: () -> Unit) {
     val (title, list) = when (d.kind) {
         "album" -> songs.filter { it.albumId.toString() == d.key }.sortedBy { it.track }.let { (it.firstOrNull()?.album ?: "Album") to it }
         "artist" -> d.key to songs.filter { it.artist == d.key }
+        "folder" -> folderName(d.key) to songs.filter { it.folder == d.key }
         "playlist" -> {
             val p = playlists.firstOrNull { it.id == d.key }
             (p?.name ?: "Playlist") to (p?.songIds?.mapNotNull { byId[it] } ?: emptyList())
@@ -324,6 +389,7 @@ fun DetailScreen(vm: MainViewModel, d: Detail, onBack: () -> Unit) {
             items(list, key = { it.id }) { s ->
                 SongRow(
                     s, s.id == ui.currentId, vm.player, playlists, { vm.player.play(list, s.id) },
+                    modifier = Modifier.animateItem(),
                     extraMenu = { dismiss ->
                         if (d.kind == "playlist") androidx.compose.material3.DropdownMenuItem(
                             text = { Text("Remove from this playlist") },
